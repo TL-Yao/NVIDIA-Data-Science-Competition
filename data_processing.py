@@ -10,7 +10,7 @@ def load_dataset(path):
     df = pd.read_csv(path)
     return df
 
-def process_dataset(df):
+def fill_nan_with_mean(df):
     """
     Fill NaN values in each column with the mean of that column
     """
@@ -66,15 +66,25 @@ def apply_min_max_normalization(df):
                 np.array(feature_params["data_range_"])
             )
             
-        # 加载y和word列的scaler参数
-        with open(os.path.join('config', 'zero_one_scaler.json'), 'r', encoding='utf-8') as f:
-            zero_one_params = json.load(f)
-            zero_one_scaler = MinMaxScaler(feature_range=(0, 1))
-            zero_one_scaler.min_ = np.array(zero_one_params["min_"])
-            zero_one_scaler.scale_ = np.array(zero_one_params["scale_"])
-            zero_one_scaler.data_min_ = np.array(zero_one_params["data_min_"])
-            zero_one_scaler.data_max_ = np.array(zero_one_params["data_max_"])
-            zero_one_scaler.data_range_ = np.array(zero_one_params["data_range_"])
+        # 加载y列的scaler参数
+        with open(os.path.join('config', 'y_scaler.json'), 'r', encoding='utf-8') as f:
+            y_params = json.load(f)
+            y_scaler = MinMaxScaler(feature_range=(0, 10))
+            y_scaler.min_ = np.array(y_params["min_"])
+            y_scaler.scale_ = np.array(y_params["scale_"])
+            y_scaler.data_min_ = np.array(y_params["data_min_"])
+            y_scaler.data_max_ = np.array(y_params["data_max_"])
+            y_scaler.data_range_ = np.array(y_params["data_range_"])
+            
+        # 加载word列的scaler参数
+        with open(os.path.join('config', 'word_scaler.json'), 'r', encoding='utf-8') as f:
+            word_params = json.load(f)
+            word_scaler = MinMaxScaler(feature_range=(0, 1))
+            word_scaler.min_ = np.array(word_params["min_"])
+            word_scaler.scale_ = np.array(word_params["scale_"])
+            word_scaler.data_min_ = np.array(word_params["data_min_"])
+            word_scaler.data_max_ = np.array(word_params["data_max_"])
+            word_scaler.data_range_ = np.array(word_params["data_range_"])
             
     except (FileNotFoundError, json.JSONDecodeError):
         # 特征归一化到[-1, 1]
@@ -82,11 +92,15 @@ def apply_min_max_normalization(df):
         feature_values = df[feature_columns].values
         df[feature_columns] = feature_scaler.fit_transform(feature_values)
         
-        # y和word列归一化到[0, 1]
-        zero_one_scaler = MinMaxScaler(feature_range=(0, 1))
-        zero_one_columns = ['y'] + word_columns
-        zero_one_values = df[zero_one_columns].values
-        df[zero_one_columns] = zero_one_scaler.fit_transform(zero_one_values)
+        # y列归一化到[0, 10]
+        y_scaler = MinMaxScaler(feature_range=(0, 10))
+        y_values = df[['y']].values
+        df['y'] = y_scaler.fit_transform(y_values)
+        
+        # word列归一化到[0, 1]
+        word_scaler = MinMaxScaler(feature_range=(0, 1))
+        word_values = df[word_columns].values
+        df[word_columns] = word_scaler.fit_transform(word_values)
         
         # 保存特征的scaler参数
         feature_params = {
@@ -99,26 +113,119 @@ def apply_min_max_normalization(df):
         with open(os.path.join('config', 'feature_scaler.json'), 'w', encoding='utf-8') as f:
             json.dump(feature_params, f)
             
-        # 保存[0,1]归一化的scaler参数
-        zero_one_params = {
-            "data_min_": zero_one_scaler.data_min_.tolist(),
-            "data_max_": zero_one_scaler.data_max_.tolist(),
-            "data_range_": zero_one_scaler.data_range_.tolist(),
-            "scale_": zero_one_scaler.scale_.tolist(),
-            "min_": zero_one_scaler.min_.tolist()
+        # 保存y列归一化的scaler参数
+        y_params = {
+            "data_min_": y_scaler.data_min_.tolist(),
+            "data_max_": y_scaler.data_max_.tolist(),
+            "data_range_": y_scaler.data_range_.tolist(),
+            "scale_": y_scaler.scale_.tolist(),
+            "min_": y_scaler.min_.tolist()
         }
-        with open(os.path.join('config', 'zero_one_scaler.json'), 'w', encoding='utf-8') as f:
-            json.dump(zero_one_params, f)
+        with open(os.path.join('config', 'y_scaler.json'), 'w', encoding='utf-8') as f:
+            json.dump(y_params, f)
+            
+        # 保存word列归一化的scaler参数
+        word_params = {
+            "data_min_": word_scaler.data_min_.tolist(),
+            "data_max_": word_scaler.data_max_.tolist(),
+            "data_range_": word_scaler.data_range_.tolist(),
+            "scale_": word_scaler.scale_.tolist(),
+            "min_": word_scaler.min_.tolist()
+        }
+        with open(os.path.join('config', 'word_scaler.json'), 'w', encoding='utf-8') as f:
+            json.dump(word_params, f)
     else:
         # 应用已保存的scaler参数
         feature_values = df[feature_columns].values
         df[feature_columns] = feature_scaler.transform(feature_values)
         
-        zero_one_columns = ['y'] + word_columns
-        zero_one_values = df[zero_one_columns].values
-        df[zero_one_columns] = zero_one_scaler.transform(zero_one_values)
+        y_values = df[['y']].values
+        df['y'] = y_scaler.transform(y_values)
+        
+        df[word_columns] = word_scaler.transform(df[word_columns].values)
 
     return df
+
+# def apply_min_max_normalization(df):
+#     """
+#     Apply Min-Max normalization:
+#     - y column: scale to [0, 1]
+#     - trick_part1, trick_part2, king_part1, king_part2: scale to [0, 1]
+#     - other numeric columns: scale to [-1, 1]
+#     """
+#     # 选择需要归一化到[-1,1]的特征列
+#     feature_columns = df.select_dtypes(include=['float64', 'int64']).columns.difference(
+#         ['id', 'y', 'trick_part1', 'trick_part2', 'king_part1', 'king_part2']
+#     )
+    
+#     # 需要归一化到[0,1]的列
+#     word_columns = ['trick_part1', 'trick_part2', 'king_part1', 'king_part2']
+    
+#     try:
+#         # 加载特征的scaler参数
+#         with open(os.path.join('config', 'feature_scaler.json'), 'r', encoding='utf-8') as f:
+#             feature_params = json.load(f)
+#             feature_scaler = MinMaxScaler(feature_range=(-1, 1))
+#             feature_scaler.min_, feature_scaler.scale_ = np.array(feature_params["min_"]), np.array(feature_params["scale_"])
+#             feature_scaler.data_min_, feature_scaler.data_max_, feature_scaler.data_range_ = (
+#                 np.array(feature_params["data_min_"]),
+#                 np.array(feature_params["data_max_"]),
+#                 np.array(feature_params["data_range_"])
+#             )
+            
+#         # 加载y和word列的scaler参数
+#         with open(os.path.join('config', 'zero_one_scaler.json'), 'r', encoding='utf-8') as f:
+#             zero_one_params = json.load(f)
+#             zero_one_scaler = MinMaxScaler(feature_range=(0, 1))
+#             zero_one_scaler.min_ = np.array(zero_one_params["min_"])
+#             zero_one_scaler.scale_ = np.array(zero_one_params["scale_"])
+#             zero_one_scaler.data_min_ = np.array(zero_one_params["data_min_"])
+#             zero_one_scaler.data_max_ = np.array(zero_one_params["data_max_"])
+#             zero_one_scaler.data_range_ = np.array(zero_one_params["data_range_"])
+            
+#     except (FileNotFoundError, json.JSONDecodeError):
+#         # 特征归一化到[-1, 1]
+#         feature_scaler = MinMaxScaler(feature_range=(-1, 1))
+#         feature_values = df[feature_columns].values
+#         df[feature_columns] = feature_scaler.fit_transform(feature_values)
+        
+#         # y和word列归一化到[0, 1]
+#         zero_one_scaler = MinMaxScaler(feature_range=(0, 1))
+#         zero_one_columns = ['y'] + word_columns
+#         zero_one_values = df[zero_one_columns].values
+#         df[zero_one_columns] = zero_one_scaler.fit_transform(zero_one_values)
+        
+#         # 保存特征的scaler参数
+#         feature_params = {
+#             "data_min_": feature_scaler.data_min_.tolist(),
+#             "data_max_": feature_scaler.data_max_.tolist(),
+#             "data_range_": feature_scaler.data_range_.tolist(),
+#             "scale_": feature_scaler.scale_.tolist(),
+#             "min_": feature_scaler.min_.tolist()
+#         }
+#         with open(os.path.join('config', 'feature_scaler.json'), 'w', encoding='utf-8') as f:
+#             json.dump(feature_params, f)
+            
+#         # 保存[0,1]归一化的scaler参数
+#         zero_one_params = {
+#             "data_min_": zero_one_scaler.data_min_.tolist(),
+#             "data_max_": zero_one_scaler.data_max_.tolist(),
+#             "data_range_": zero_one_scaler.data_range_.tolist(),
+#             "scale_": zero_one_scaler.scale_.tolist(),
+#             "min_": zero_one_scaler.min_.tolist()
+#         }
+#         with open(os.path.join('config', 'zero_one_scaler.json'), 'w', encoding='utf-8') as f:
+#             json.dump(zero_one_params, f)
+#     else:
+#         # 应用已保存的scaler参数
+#         feature_values = df[feature_columns].values
+#         df[feature_columns] = feature_scaler.transform(feature_values)
+        
+#         zero_one_columns = ['y'] + word_columns
+#         zero_one_values = df[zero_one_columns].values
+#         df[zero_one_columns] = zero_one_scaler.transform(zero_one_values)
+
+#     return df
 
 
 
@@ -168,14 +275,35 @@ def process_words_columns(df, word_dict_path):
     
     return df
 
+def check_negative_one(df):
+    # load negative_one replace column name list
+    try:    
+        with open(os.path.join('config', 'negative_one_replace_columns.json'), 'r', encoding='utf-8') as f:
+            negative_one_replace_columns = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        negative_one_replace_columns = []
+        # check for each column, if there is no nan data but -1, replace -1 with nan
+        for column in negative_one_replace_columns:
+            if df[column].isnull().sum() == 0 and (df[column] == -1).any():
+                negative_one_replace_columns.append(column)
+
+        # save negative_one replace column name list
+        with open(os.path.join('config', 'negative_one_replace_columns.json'), 'w', encoding='utf-8') as f:
+            json.dump(negative_one_replace_columns, f)
+    else:
+        for column in negative_one_replace_columns:
+            if df[column].isnull().sum() == 0 and (df[column] == -1).any():
+                df[column] = df[column].replace(-1, np.nan)
+
 def save_dataset(df, path):
     df.to_csv(path, index=False)
 
 
 def __main__():
-    process_file_name = 'data_sample'
+    process_file_name = 'data_sample_xs'
     df = load_dataset(os.path.join('dataset', f'{process_file_name}.csv'))
-    process_dataset(df)
+    check_negative_one(df)
+    fill_nan_with_mean(df)
     df = process_words_columns(df, os.path.join('config', 'word_dict.json'))
     apply_min_max_normalization(df)
     save_dataset(df, os.path.join('dataset', f'processed_{process_file_name}.csv'))

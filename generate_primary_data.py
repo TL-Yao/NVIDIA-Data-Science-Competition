@@ -25,9 +25,9 @@ def primary_component_analysis(df, file_name):
         with open(os.path.join('.', 'config', 'pca_model.pkl'), 'rb') as f:
             pca = pickle.load(f)
     else:
-        pca = PCA(n_components=0.95)
+        pca = PCA(n_components=0.99)
         pca.fit(features_df)
-        print(f"Number of components to keep 95% of the variance: {pca.n_components_}")
+        print(f"Number of components to keep 99% of the variance: {pca.n_components_}")
         save_pca = True
         
     # transform the data
@@ -57,7 +57,7 @@ def primary_component_analysis(df, file_name):
 
 
 def __main__():
-    file_name = 'processed_data_sample'
+    file_name = 'processed_data_sample_xs'
     df = load_dataset(os.path.join('.', 'dataset', f'{file_name}.csv'))
     primary_component_analysis(df, file_name)
 
