@@ -41,39 +41,82 @@ def process_dataset(df):
 
 def apply_min_max_normalization(df):
     """
-    Apply Min-Max normalization to all numeric columns
+    Apply Min-Max normalization:
+    - y column: scale to [0, 1]
+    - trick_part1, trick_part2, king_part1, king_part2: scale to [0, 1]
+    - other numeric columns: scale to [-1, 1]
     """
-    chosen_columns = df.select_dtypes(include=['float64', 'int64']).columns.difference(['id', 'y', 'trickortreat', 'kingofhalloween'])
-
-    # Load scaler parameters from JSON file
+    # 选择需要归一化到[-1,1]的特征列
+    feature_columns = df.select_dtypes(include=['float64', 'int64']).columns.difference(
+        ['id', 'y', 'trick_part1', 'trick_part2', 'king_part1', 'king_part2']
+    )
+    
+    # 需要归一化到[0,1]的列
+    word_columns = ['trick_part1', 'trick_part2', 'king_part1', 'king_part2']
+    
     try:
-        with open('min_max_scaler.json', 'r', encoding='utf-8') as f:
-            scaler_params = json.load(f)
-            scaler = MinMaxScaler()
-            scaler.min_, scaler.scale_ = np.array(scaler_params["min_"]), np.array(scaler_params["scale_"])
-            scaler.data_min_, scaler.data_max_, scaler.data_range_ = (
-                np.array(scaler_params["data_min_"]),
-                np.array(scaler_params["data_max_"]),
-                np.array(scaler_params["data_range_"])
+        # 加载特征的scaler参数
+        with open(os.path.join('config', 'feature_scaler.json'), 'r', encoding='utf-8') as f:
+            feature_params = json.load(f)
+            feature_scaler = MinMaxScaler(feature_range=(-1, 1))
+            feature_scaler.min_, feature_scaler.scale_ = np.array(feature_params["min_"]), np.array(feature_params["scale_"])
+            feature_scaler.data_min_, feature_scaler.data_max_, feature_scaler.data_range_ = (
+                np.array(feature_params["data_min_"]),
+                np.array(feature_params["data_max_"]),
+                np.array(feature_params["data_range_"])
             )
+            
+        # 加载y和word列的scaler参数
+        with open(os.path.join('config', 'zero_one_scaler.json'), 'r', encoding='utf-8') as f:
+            zero_one_params = json.load(f)
+            zero_one_scaler = MinMaxScaler(feature_range=(0, 1))
+            zero_one_scaler.min_ = np.array(zero_one_params["min_"])
+            zero_one_scaler.scale_ = np.array(zero_one_params["scale_"])
+            zero_one_scaler.data_min_ = np.array(zero_one_params["data_min_"])
+            zero_one_scaler.data_max_ = np.array(zero_one_params["data_max_"])
+            zero_one_scaler.data_range_ = np.array(zero_one_params["data_range_"])
+            
     except (FileNotFoundError, json.JSONDecodeError):
-        scaler = MinMaxScaler()
-        # normalize all chosen columns
-        df[chosen_columns] = scaler.fit_transform(df[chosen_columns])
+        # 特征归一化到[-1, 1]
+        feature_scaler = MinMaxScaler(feature_range=(-1, 1))
+        feature_values = df[feature_columns].values
+        df[feature_columns] = feature_scaler.fit_transform(feature_values)
         
-        # Save scaler parameters
-        scaler_params = {
-            "data_min_": scaler.data_min_.tolist(),
-            "data_max_": scaler.data_max_.tolist(),
-            "data_range_": scaler.data_range_.tolist(),
-            "scale_": scaler.scale_.tolist(),
-            "min_": scaler.min_.tolist()
+        # y和word列归一化到[0, 1]
+        zero_one_scaler = MinMaxScaler(feature_range=(0, 1))
+        zero_one_columns = ['y'] + word_columns
+        zero_one_values = df[zero_one_columns].values
+        df[zero_one_columns] = zero_one_scaler.fit_transform(zero_one_values)
+        
+        # 保存特征的scaler参数
+        feature_params = {
+            "data_min_": feature_scaler.data_min_.tolist(),
+            "data_max_": feature_scaler.data_max_.tolist(),
+            "data_range_": feature_scaler.data_range_.tolist(),
+            "scale_": feature_scaler.scale_.tolist(),
+            "min_": feature_scaler.min_.tolist()
         }
-        with open(os.path.join('config', 'min_max_scaler.json'), 'w', encoding='utf-8') as f:
-            json.dump(scaler_params, f)
+        with open(os.path.join('config', 'feature_scaler.json'), 'w', encoding='utf-8') as f:
+            json.dump(feature_params, f)
+            
+        # 保存[0,1]归一化的scaler参数
+        zero_one_params = {
+            "data_min_": zero_one_scaler.data_min_.tolist(),
+            "data_max_": zero_one_scaler.data_max_.tolist(),
+            "data_range_": zero_one_scaler.data_range_.tolist(),
+            "scale_": zero_one_scaler.scale_.tolist(),
+            "min_": zero_one_scaler.min_.tolist()
+        }
+        with open(os.path.join('config', 'zero_one_scaler.json'), 'w', encoding='utf-8') as f:
+            json.dump(zero_one_params, f)
     else:
-        # Apply loaded scaler parameters
-        df[chosen_columns] = scaler.transform(df[chosen_columns])
+        # 应用已保存的scaler参数
+        feature_values = df[feature_columns].values
+        df[feature_columns] = feature_scaler.transform(feature_values)
+        
+        zero_one_columns = ['y'] + word_columns
+        zero_one_values = df[zero_one_columns].values
+        df[zero_one_columns] = zero_one_scaler.transform(zero_one_values)
 
     return df
 
@@ -95,12 +138,19 @@ def process_words_columns(df, word_dict_path):
         print(f"File {word_dict_path} not found")
         exit(1)
 
-    # create new columns
+    # 定义映射函数，添加警告
+    def safe_map(series, mapping):
+        unmapped = series[~series.isna() & ~series.isin(mapping.keys())]
+        if not unmapped.empty:
+            print(f"警告：以下值未在字典中找到映射：{unmapped.unique().tolist()}")
+        return series.map(mapping)
+
+    # create new columns with warning check
     new_columns = {
-        'trick_part1': split_trick[0].map(word_to_idx),
-        'trick_part2': split_trick[1].map(word_to_idx),
-        'king_part1': split_king[0].map(word_to_idx),
-        'king_part2': split_king[1].map(word_to_idx)
+        'trick_part1': safe_map(split_trick[0], word_to_idx),
+        'trick_part2': safe_map(split_trick[1], word_to_idx),
+        'king_part1': safe_map(split_king[0], word_to_idx),
+        'king_part2': safe_map(split_king[1], word_to_idx)
     }
     
     # insert new columns after 2rd column
@@ -123,11 +173,11 @@ def save_dataset(df, path):
 
 
 def __main__():
-    process_file_name = 'data_sample_xs'
+    process_file_name = 'data_sample'
     df = load_dataset(os.path.join('dataset', f'{process_file_name}.csv'))
     process_dataset(df)
+    df = process_words_columns(df, os.path.join('config', 'word_dict.json'))
     apply_min_max_normalization(df)
-    process_words_columns(df, os.path.join('config', 'word_dict.json'))
     save_dataset(df, os.path.join('dataset', f'processed_{process_file_name}.csv'))
 
 if __name__ == '__main__':

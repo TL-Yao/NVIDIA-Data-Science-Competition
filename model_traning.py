@@ -11,15 +11,15 @@ from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset
 import torch.nn as nn
 import torch.optim as optim
-
+import os
 seed = 42
 
 # 自定义 Dataset 类（如上所述）
 class CustomDataset(Dataset):
     def __init__(self, dataframe):
         self.data = dataframe
-        self.features = dataframe.drop(columns=[dataframe.columns[0], dataframe.columns[1]])
-        self.labels = dataframe.iloc[:, 1] # label y
+        self.features = dataframe.drop(columns=[dataframe.columns[0], dataframe.columns[-1]])
+        self.labels = dataframe.iloc[:, -1] # label y
     
     def __len__(self):
         return len(self.data)
@@ -108,37 +108,57 @@ def train_model(model, train_loader, val_loader, loss_fn, optimizer, num_epochs=
 def evaluate_model(model, val_loader, loss_fn):
     # device check cuda first, then mps, then cpu
     device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
+    model.to(device)
     model.eval()
     val_loss = 0.0
-    correct = 0
+    total_absolute_error = 0.0  # 用于计算 MAE
     total = 0
 
     with torch.no_grad():
         for inputs, targets in val_loader:
             inputs, targets = inputs.to(device), targets.to(device)
-            outputs = model(inputs)
-            outputs = outputs.squeeze()
+            outputs = model(inputs).squeeze()
             loss = loss_fn(outputs, targets)
             val_loss += loss.item()
             
-            correct += (outputs.round() == targets).sum().item()
-            total += targets.size(0)
+            # Calculate absolute error for MAE
+            total_absolute_error += (outputs - targets).abs().sum().item()
+            total += len(targets)
             
+    # Average loss over all batches
     val_loss /= len(val_loader)
-    accuracy = correct / total
-    print(f'Validation Loss: {val_loss:.4f}, Accuracy: {accuracy:.4f}')
+    # Calculate Mean Absolute Error (MAE)
+    mae = total_absolute_error / total
+    print(f'Validation Loss: {val_loss:.4f}, Mean Absolute Error (MAE): {mae:.4f}')
+
+def save_model(model, file_path):
+    torch.save(model.state_dict(), file_path)
 
 def main():
-    training_dataset, validation_dataset = load_training_data_from_csv_file('../odsc-2024-nvidia-hackathon/data_sample_xs.csv')
+    print('loading data...')
+    training_dataset, validation_dataset, testing_dataset = load_training_data_from_csv_file(os.path.join('.', 'dataset', 'pca_processed_data_sample.csv'))
 
-    train_loader = create_dataloader(training_dataset)
-    val_loader = create_dataloader(validation_dataset, shuffle=False)
+    print('creating dataloader...')
+    train_loader = create_dataloader(training_dataset, batch_size=1024, num_workers=8)
+    val_loader = create_dataloader(validation_dataset, batch_size=1024, num_workers=8, shuffle=False)
+    test_loader = create_dataloader(testing_dataset, batch_size=1024, num_workers=8, shuffle=False)
 
-    model = MLP(input_size=104)
-    loss_fn = nn.MSELoss()
+    print('creating model...')
+    # input size depends on the number of features in training data
+    print(f'Input size: {len(training_dataset[0][0])}')
+    model = MLP(input_size=len(training_dataset[0][0]))
+    loss_fn = nn.L1Loss()
     optimizer = optim.Adam(model.parameters(), lr=0.001)
 
-    train_model(model, train_loader, val_loader, loss_fn, optimizer)
+    print('training model...')
+    train_model(model, train_loader, val_loader, loss_fn, optimizer, num_epochs=100)
+
+    print('evaluating model...')
+    evaluate_model(model, test_loader, loss_fn)
+
+    print('saving model...')
+    # save the model
+    save_model(model, os.path.join('.', 'model', 'mlp_model.pth'))
 
 if __name__ == '__main__':
     main()
