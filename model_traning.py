@@ -1,6 +1,3 @@
-"""
-MLP model training with 80 features as input
-"""
 import pandas as pd
 import numpy as np
 import torch

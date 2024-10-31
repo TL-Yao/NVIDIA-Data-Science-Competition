@@ -283,24 +283,26 @@ def check_negative_one(df):
     except (FileNotFoundError, json.JSONDecodeError):
         negative_one_replace_columns = []
         # check for each column, if there is no nan data but -1, replace -1 with nan
-        for column in negative_one_replace_columns:
+        for column in df.columns:
             if df[column].isnull().sum() == 0 and (df[column] == -1).any():
                 negative_one_replace_columns.append(column)
 
         # save negative_one replace column name list
         with open(os.path.join('config', 'negative_one_replace_columns.json'), 'w', encoding='utf-8') as f:
             json.dump(negative_one_replace_columns, f)
-    else:
-        for column in negative_one_replace_columns:
-            if df[column].isnull().sum() == 0 and (df[column] == -1).any():
-                df[column] = df[column].replace(-1, np.nan)
+
+    for column in negative_one_replace_columns:
+        # 确保列是浮点数类型
+        df[column] = df[column].astype(float)
+        # 使用loc进行替换
+        df.loc[df[column] == -1, column] = np.nan
 
 def save_dataset(df, path):
     df.to_csv(path, index=False)
 
 
 def __main__():
-    process_file_name = 'data_sample_xs'
+    process_file_name = 'train'
     df = load_dataset(os.path.join('dataset', f'{process_file_name}.csv'))
     check_negative_one(df)
     fill_nan_with_mean(df)

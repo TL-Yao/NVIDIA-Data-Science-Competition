@@ -57,7 +57,7 @@ def primary_component_analysis(df, file_name):
 
 
 def __main__():
-    file_name = 'processed_data_sample_xs'
+    file_name = 'processed_train'
     df = load_dataset(os.path.join('.', 'dataset', f'{file_name}.csv'))
     primary_component_analysis(df, file_name)
 
