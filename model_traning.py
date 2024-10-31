@@ -30,21 +30,16 @@ class CustomDataset(Dataset):
         return x, y
 
 # load training data from csv file
-def load_training_data_from_csv_file(file_path, test_size=0.2):
+def load_training_data_from_csv_file(file_path, validation_size=0.15, test_size=0.15):
     training_data = pd.read_csv(file_path)
-    # remove the third and forth columns
-    training_data = training_data.drop(columns=[training_data.columns[2], training_data.columns[3]])
 
-    train_df, val_df = train_test_split(training_data, test_size=test_size, random_state=seed)
+    # split the data into training, validation, and testing 
+    train_df, val_df, test_df = np.split(training_data.sample(frac=1, random_state=seed), [int(0.6*len(training_data)), int(0.8*len(training_data))])
     training_dataset = CustomDataset(train_df)
     validation_dataset = CustomDataset(val_df)
-    return training_dataset, validation_dataset
+    testing_dataset = CustomDataset(test_df)
 
-# load testing data from csv file
-def load_testing_data_from_csv_file(file_path):
-    testing_data = pd.read_csv(file_path)
-    testing_dataset = CustomDataset(testing_data)
-    return testing_dataset
+    return training_dataset, validation_dataset, testing_dataset
 
 # create dataloader from dataset
 def create_dataloader(dataset, batch_size=256, shuffle=True, num_workers=4):
@@ -135,11 +130,9 @@ def evaluate_model(model, val_loader, loss_fn):
 
 def main():
     training_dataset, validation_dataset = load_training_data_from_csv_file('../odsc-2024-nvidia-hackathon/data_sample_xs.csv')
-    testing_dataset = load_testing_data_from_csv_file('../odsc-2024-nvidia-hackathon/test.csv')
 
     train_loader = create_dataloader(training_dataset)
     val_loader = create_dataloader(validation_dataset, shuffle=False)
-    test_loader = create_dataloader(testing_dataset, shuffle=False)
 
     model = MLP(input_size=104)
     loss_fn = nn.MSELoss()
